@@ -144,3 +144,32 @@ export const accountApi = {
       headers: { "Content-Type": "multipart/form-data" },
     }),
 }
+
+
+// Chat APIs
+export const chatApi = {
+  startConversation: (storeId: string) =>
+    getApi().post("/chat/conversations", { storeId }),
+
+  getInbox: () => getApi().get("/chat/inbox"),
+
+  getMessages: (conversationId: string) =>
+    getApi().get(`/chat/conversations/${conversationId}/messages`),
+
+  sendMessage: (conversationId: string, text: string, files?: File[]) => {
+    const formData = new FormData()
+    formData.append("text", text)
+    if (files) {
+      files.forEach((file) => formData.append("chatFile", file))
+    }
+    return getApi().post(`/chat/conversations/${conversationId}/messages`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+  },
+
+  deleteConversations: (conversationIds: string[]) =>
+    getApi().delete("/chat/conversations", { data: { conversationIds } }),
+
+  markAsRead: (conversationIds: string[]) =>
+    getApi().patch("/chat/conversations/read", { conversationIds }),
+}
