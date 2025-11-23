@@ -4,11 +4,12 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Search } from "lucide-react"
+import { Search, FileText, Box, Truck, Package, Check } from "lucide-react"
 import { useToast } from "@/components/toast-provider"
 import { orderApi } from "@/lib/api"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSession } from "next-auth/react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 interface Order {
   _id: string
@@ -19,17 +20,70 @@ interface Order {
   createdAt: string
 }
 
+// Timeline steps
+const shippingSteps = [
+  { key: "items_discounted", label: "Items Discounted" },
+  { key: "in_progress", label: "In Progress" },
+  { key: "shipped", label: "Shipped" },
+  { key: "delivered", label: "Delivered" },
+]
+
+// Icons for right side of each step
+const shippingIcons = [FileText, Box, Truck, Package]
+
+// Map backend statuses to step index in the timeline
+const statusToStepIndex: Record<string, number> = {
+  "items discounted": 0,
+  discounted: 0,
+  "in progress": 1,
+  processing: 1,
+  pending: 1,
+  shipped: 2,
+  "out for delivery": 2,
+  delivered: 3,
+  completed: 3,
+}
+
+const getCurrentStepIndex = (status?: string) => {
+  if (!status) return 0
+  const normalized = status.toLowerCase()
+  return statusToStepIndex[normalized] ?? 0
+}
+
+const formatFullDate = (dateStr?: string) => {
+  if (!dateStr) return ""
+  return new Date(dateStr).toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  })
+}
+
+const STATUS_OPTIONS = [
+  "items discounted",
+  "in progress",
+  "shipped",
+  "delivered",
+]
+
 export default function OrdersPage() {
   const { addToast } = useToast()
   const { data: session } = useSession()
 
   const [orders, setOrders] = useState<Order[]>([])
   const [searchTerm, setSearchTerm] = useState("")
-  const [filterStatus, setFilterStatus] = useState("all")
+  const [filterStatus] = useState("all") // kept for future filter use
   const [loading, setLoading] = useState(true)
 
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+
+  // shipping modal state
+  const [shippingModalOpen, setShippingModalOpen] = useState(false)
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+
+  // dropdown updating indicator
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null)
 
   // ----------------------------------------
   // 🔥 FETCH ORDERS
@@ -43,14 +97,13 @@ export default function OrdersPage() {
       const rawOrders = res.data.data.orders
       const pagination = res.data.data.pagination
 
-      // 🎯 Transform API → Frontend-friendly data
       const mappedOrders = rawOrders.map((o: any) => ({
         _id: o._id,
         productTitle: o.productDetails?.title || "N/A",
         customerName: o.buyer?.name || "N/A",
         createdAt: o.createdAt,
         totalAmount: o.amount,
-        status: o.orderStatus, // completed/pending/accepted etc.
+        status: o.orderStatus,
       }))
 
       setOrders(mappedOrders)
@@ -68,7 +121,44 @@ export default function OrdersPage() {
   useEffect(() => {
     if (!session) return
     fetchOrders()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, currentPage])
+
+  // ----------------------------------------
+  // 🔁 UPDATE STATUS (select + PATCH)
+  // ----------------------------------------
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    const prevOrders = [...orders]
+    setUpdatingStatusId(id)
+
+    // optimistic UI update
+    setOrders((prev) =>
+      prev.map((o) => (o._id === id ? { ...o, status: newStatus } : o)),
+    )
+
+    try {
+      const res = await orderApi.updateStatus(id, newStatus)
+
+      if (!res.data?.success && !res.data?.status) {
+        // depending on your response format
+        throw new Error(res.data?.message || "Failed to update status")
+      }
+
+      addToast({
+        type: "success",
+        message: "Order status updated successfully",
+      })
+    } catch (error: any) {
+      // revert on error
+      setOrders(prevOrders)
+      addToast({
+        type: "error",
+        message: error?.response?.data?.message || "Failed to update status",
+      })
+    } finally {
+      setUpdatingStatusId(null)
+    }
+  }
 
   // ----------------------------------------
   // 🔍 FILTERING
@@ -91,10 +181,14 @@ export default function OrdersPage() {
     switch (status?.toLowerCase()) {
       case "completed":
       case "paid":
+      case "delivered":
         return "bg-green-100 text-green-700"
       case "pending":
+      case "in progress":
+      case "processing":
         return "bg-yellow-100 text-yellow-700"
       case "accepted":
+      case "shipped":
         return "bg-blue-100 text-blue-700"
       case "cancelled":
       case "rejected":
@@ -102,6 +196,11 @@ export default function OrdersPage() {
       default:
         return "bg-gray-100 text-gray-700"
     }
+  }
+
+  const openShippingModal = (order: Order) => {
+    setActiveOrder(order)
+    setShippingModalOpen(true)
   }
 
   return (
@@ -123,19 +222,6 @@ export default function OrdersPage() {
                 className="pl-10 bg-white"
               />
             </div>
-
-            {/* Status Filter */}
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg bg-white"
-            >
-              <option value="all">All Status</option>
-              <option value="completed">Completed</option>
-              <option value="pending">Pending</option>
-              <option value="accepted">Accepted</option>
-              <option value="rejected">Rejected</option>
-            </select>
           </div>
         </CardHeader>
 
@@ -158,6 +244,7 @@ export default function OrdersPage() {
                       <th className="text-left py-3 px-4">Date</th>
                       <th className="text-left py-3 px-4">Amount</th>
                       <th className="text-left py-3 px-4">Status</th>
+                      <th className="text-left py-3 px-4">Shipping</th>
                     </tr>
                   </thead>
 
@@ -182,11 +269,29 @@ export default function OrdersPage() {
                               {order.status}
                             </span>
                           </td>
+                          <td className="py-3 px-4">
+                            <select
+                              value={order.status.toLowerCase()}
+                              onChange={(e) =>
+                                handleStatusChange(order._id, e.target.value)
+                              }
+                              disabled={updatingStatusId === order._id}
+                              className={`px-3 py-1 rounded-full text-xs font-medium border bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${getStatusColor(
+                                order.status,
+                              )}`}
+                            >
+                              {STATUS_OPTIONS.map((status) => (
+                                <option key={status} value={status}>
+                                  {status.charAt(0).toUpperCase() + status.slice(1)}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={5} className="py-6 text-center text-gray-500">
+                        <td colSpan={6} className="py-6 text-center text-gray-500">
                           No orders found
                         </td>
                       </tr>
@@ -223,6 +328,7 @@ export default function OrdersPage() {
           )}
         </CardContent>
       </Card>
+
     </div>
   )
 }

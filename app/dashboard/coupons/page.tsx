@@ -6,11 +6,18 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Plus, Edit2, Trash2, Search, X } from "lucide-react"
+import { Plus, Edit2, Trash2, Search } from "lucide-react"
 import { useToast } from "@/components/toast-provider"
 import { couponApi } from "@/lib/api"
 import { DeleteModal } from "@/components/delete-modal"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
 
 interface Coupon {
   _id: string
@@ -26,7 +33,7 @@ interface Coupon {
 export default function CouponsPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([])
   const [searchTerm, setSearchTerm] = useState("")
-  const [showForm, setShowForm] = useState(false)
+  const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -44,7 +51,19 @@ export default function CouponsPage() {
 
   useEffect(() => {
     fetchCoupons()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage])
+
+  const resetForm = () => {
+    setFormData({
+      code: "",
+      discountType: "percentage",
+      discountValue: "",
+      expiryDate: "",
+      usageLimit: "",
+    })
+    setEditingId(null)
+  }
 
   const fetchCoupons = async () => {
     setLoading(true)
@@ -92,15 +111,8 @@ export default function CouponsPage() {
         addToast({ title: "Coupon created successfully", type: "success" })
       }
 
-      setFormData({
-        code: "",
-        discountType: "percentage",
-        discountValue: "",
-        expiryDate: "",
-        usageLimit: "",
-      })
-      setEditingId(null)
-      setShowForm(false)
+      resetForm()
+      setIsFormOpen(false)
       fetchCoupons()
     } catch (error: any) {
       addToast({
@@ -140,7 +152,7 @@ export default function CouponsPage() {
       usageLimit: coupon.usageLimit.toString(),
     })
     setEditingId(coupon._id)
-    setShowForm(true)
+    setIsFormOpen(true)
   }
 
   const filteredCoupons = coupons.filter((c) => c.code.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -151,15 +163,8 @@ export default function CouponsPage() {
         <h1 className="text-3xl font-bold text-gray-900">Coupons & Offers</h1>
         <Button
           onClick={() => {
-            setShowForm(!showForm)
-            setEditingId(null)
-            setFormData({
-              code: "",
-              discountType: "percentage",
-              discountValue: "",
-              expiryDate: "",
-              usageLimit: "",
-            })
+            resetForm()
+            setIsFormOpen(true)
           }}
           className="bg-blue-600 hover:bg-blue-700"
         >
@@ -167,93 +172,6 @@ export default function CouponsPage() {
           Add Coupon
         </Button>
       </div>
-
-      {showForm && (
-        <Card className="bg-blue-50 border-blue-200">
-          <CardHeader className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">{editingId ? "Edit Coupon" : "Add New Coupon"}</h2>
-            <button onClick={() => setShowForm(false)} disabled={loading}>
-              <X className="w-5 h-5" />
-            </button>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleAddCoupon} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Coupon Code</label>
-                  <Input
-                    placeholder="SUMMER20"
-                    value={formData.code}
-                    onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                    className="bg-white"
-                    disabled={loading}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Discount Type</label>
-                  <select
-                    value={formData.discountType}
-                    onChange={(e) =>
-                      setFormData({ ...formData, discountType: e.target.value as "percentage" | "fixed" })
-                    }
-                    className="px-3 py-2 border border-gray-300 rounded-lg bg-white w-full"
-                    disabled={loading}
-                  >
-                    <option value="percentage">Percentage (%)</option>
-                    <option value="fixed">Fixed ($)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Discount Value</label>
-                  <Input
-                    placeholder="20"
-                    type="number"
-                    value={formData.discountValue}
-                    onChange={(e) => setFormData({ ...formData, discountValue: e.target.value })}
-                    className="bg-white"
-                    disabled={loading}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date</label>
-                  <Input
-                    type="date"
-                    value={formData.expiryDate}
-                    onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
-                    className="bg-white"
-                    disabled={loading}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Usage Limit</label>
-                  <Input
-                    placeholder="100"
-                    type="number"
-                    value={formData.usageLimit}
-                    onChange={(e) => setFormData({ ...formData, usageLimit: e.target.value })}
-                    className="bg-white"
-                    disabled={loading}
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button type="submit" disabled={loading} className="flex-1 bg-blue-600 hover:bg-blue-700">
-                  {loading ? "Saving..." : editingId ? "Update" : "Add"} Coupon
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  variant="outline"
-                  className="flex-1"
-                  disabled={loading}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardHeader>
@@ -370,6 +288,112 @@ export default function CouponsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Add / Edit Coupon Modal */}
+      <Dialog
+        open={isFormOpen}
+        onOpenChange={(open) => {
+          setIsFormOpen(open)
+          if (!open) resetForm()
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Edit Coupon" : "Add New Coupon"}</DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleAddCoupon} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Coupon Code</label>
+                <Input
+                  placeholder="SUMMER20"
+                  value={formData.code}
+                  onChange={(e) =>
+                    setFormData({ ...formData, code: e.target.value.toUpperCase() })
+                  }
+                  className="bg-white"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Discount Type</label>
+                <select
+                  value={formData.discountType}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      discountType: e.target.value as "percentage" | "fixed",
+                    })
+                  }
+                  className="px-3 py-2 border border-gray-300 rounded-lg bg-white w-full"
+                  disabled={loading}
+                >
+                  <option value="percentage">Percentage (%)</option>
+                  <option value="fixed">Fixed ($)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Discount Value</label>
+                <Input
+                  placeholder="20"
+                  type="number"
+                  value={formData.discountValue}
+                  onChange={(e) =>
+                    setFormData({ ...formData, discountValue: e.target.value })
+                  }
+                  className="bg-white"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date</label>
+                <Input
+                  type="date"
+                  value={formData.expiryDate}
+                  onChange={(e) =>
+                    setFormData({ ...formData, expiryDate: e.target.value })
+                  }
+                  className="bg-white"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Usage Limit</label>
+                <Input
+                  placeholder="100"
+                  type="number"
+                  value={formData.usageLimit}
+                  onChange={(e) =>
+                    setFormData({ ...formData, usageLimit: e.target.value })
+                  }
+                  className="bg-white"
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="flex gap-2">
+              <Button
+                type="submit"
+                disabled={loading}
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+              >
+                {loading ? "Saving..." : editingId ? "Update" : "Add"} Coupon
+              </Button>
+              <Button
+                type="button"
+                onClick={() => setIsFormOpen(false)}
+                variant="outline"
+                className="flex-1"
+                disabled={loading}
+              >
+                Cancel
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <DeleteModal
         open={!!deleteId}

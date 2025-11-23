@@ -62,7 +62,6 @@ export default function CustomersPage() {
     <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-gray-900">Customer List</h1>
-        <Button className="bg-blue-600 hover:bg-blue-700">Add Customer</Button>
       </div>
 
       <Card>

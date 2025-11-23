@@ -90,9 +90,12 @@ export const categoryApi = {
 export const orderApi = {
   getAll: (page = 1, limit = 10) =>
     getApi().get(`/vendor/orders?page=${page}&limit=${limit}`),
-  updateStatus: (vendorId: string, orderStatus: string) =>
-    getApi().patch(`/vendor/orders/${vendorId}/status`, { orderStatus }),
+
+  // adjust the URL if your route is different
+  updateStatus: (id: string, orderStatus: string) =>
+    getApi().put(`/vendor/${id}/status`, { orderStatus }),
 }
+
 
 // 👥 CUSTOMER APIs
 export const customerApi = {
