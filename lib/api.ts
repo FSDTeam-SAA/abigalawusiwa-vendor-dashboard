@@ -210,6 +210,23 @@ export const chatApi = {
     getApi().patch("/chat/conversations/read", { conversationIds }),
 };
 
+
+
+export const vendorDashboardApi = {
+  getOverview: () => getApi().get("/vendor/dashboard/overview"),
+  getOrderAnalytics: () => getApi().get("/vendor/dashboard/analytics/orders"),
+}
+
+
+
+// 💰 COMMISSION APIs
+export const commissionApi = {
+  // GET /commissions/my?page=&limit=
+  getMy: (page = 1, limit = 10) =>
+    getApi().get(`/commissions/my?page=${page}&limit=${limit}`),
+}
+
+
 export const notificationApi = {
   // GET /v1/notifications
   getMyNotifications: () => getApi().get("/notifications"),

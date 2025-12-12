@@ -16,59 +16,79 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { DollarSign, ShoppingCart, Users, TrendingUp } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { vendorDashboardApi } from "@/lib/api"
 
-const paymentData = [
-  { month: "Jan", value: 25 },
-  { month: "Feb", value: 35 },
-  { month: "Mar", value: 45 },
-  { month: "Apr", value: 40 },
-  { month: "May", value: 55 },
-  { month: "Jun", value: 50 },
-  { month: "Jul", value: 65 },
-  { month: "Aug", value: 60 },
-  { month: "Sep", value: 70 },
-  { month: "Oct", value: 75 },
-  { month: "Nov", value: 80 },
-  { month: "Dec", value: 90 },
-]
+type VendorOverviewRes = {
+  totals: {
+    totalEarnings: number
+    totalOrders: number
+    monthlyEarnings: number
+    monthlyOrders: number
+    pendingOrders: number
+    completedOrders: number
+    averageOrderValue: number
+    totalCustomers: number
+    totalProducts: number
+    totalCommissionPaid: number
+  }
+  breakdowns: {
+    orderStatus: { status: string; count: number }[]
+  }
+  lastUpdated: string
+}
 
-const orderData = [
-  { month: "Jan", value: 45 },
-  { month: "Feb", value: 65 },
-  { month: "Mar", value: 95 },
-  { month: "Apr", value: 70 },
-  { month: "May", value: 80 },
-  { month: "Jun", value: 45 },
-  { month: "Jul", value: 85 },
-  { month: "Aug", value: 55 },
-  { month: "Sep", value: 75 },
-  { month: "Oct", value: 80 },
-  { month: "Nov", value: 40 },
-  { month: "Dec", value: 55 },
-]
+type VendorOrdersAnalyticsRes = {
+  range: { start: string; end: string }
+  granularity: string
+  totals: { orders: number; amount: number; averageOrderValue: number }
+  timeline: { date?: string; label?: string; orders?: number; amount?: number; value?: number }[]
+}
 
-const analyticsData = [
-  { name: "Sales", value: 65, color: "#0052CC" },
-  { name: "Pending", value: 20, color: "#B8B8FF" },
-  { name: "Distribute", value: 15, color: "#D4D4D4" },
-]
-
-const recentCustomers = [
-  { id: 1, name: "Tasha", orderId: "#5985", date: "8 sep, 2020", status: "On the way" },
-  { id: 2, name: "Tasha", orderId: "#5985", date: "8 sep, 2020", status: "On the way" },
-  { id: 3, name: "Tasha", orderId: "#5985", date: "8 sep, 2020", status: "On the way" },
-  { id: 4, name: "Tasha", orderId: "#5985", date: "8 sep, 2020", status: "On the way" },
-  { id: 5, name: "Tasha", orderId: "#5985", date: "8 sep, 2020", status: "On the way" },
-]
-
-const reviewOrders = [
-  { order: "All", amount: 15 },
-  { order: "Trash", amount: 6 },
-  { order: "Pending", amount: 15 },
-  { order: "Spam", amount: 3 },
-]
+const PIE_COLORS = ["#0052CC", "#B8B8FF", "#D4D4D4", "#22c55e", "#f97316", "#ef4444"]
 
 export default function Dashboard() {
+  const overviewQuery = useQuery<VendorOverviewRes>({
+    queryKey: ["vendor-dashboard-overview"],
+    queryFn: async () => {
+      const res = await vendorDashboardApi.getOverview()
+      return res.data.data
+    },
+  })
+
+  const analyticsQuery = useQuery<VendorOrdersAnalyticsRes>({
+    queryKey: ["vendor-dashboard-orders-analytics"],
+    queryFn: async () => {
+      const res = await vendorDashboardApi.getOrderAnalytics()
+      return res.data.data
+    },
+  })
+
+  const totals = overviewQuery.data?.totals
+  const breakdown = overviewQuery.data?.breakdowns?.orderStatus ?? []
+
+  // ✅ Pie chart from breakdowns.orderStatus
+  const analyticsData =
+    breakdown.length > 0
+      ? breakdown.map((x, idx) => ({
+          name: x.status,
+          value: x.count,
+          color: PIE_COLORS[idx % PIE_COLORS.length],
+        }))
+      : [{ name: "No Data", value: 1, color: "#D4D4D4" }]
+
+  // ✅ Bar chart from timeline (fallback when empty)
+  const orderTimeline =
+    (analyticsQuery.data?.timeline ?? []).map((t) => ({
+      month: t.label ?? (t.date ? new Date(t.date).toLocaleDateString() : "—"),
+      value: t.orders ?? t.value ?? 0,
+    })) || []
+
+  const safeOrderTimeline = orderTimeline.length ? orderTimeline : [{ month: "—", value: 0 }]
+
+  // ✅ Line chart: use monthlyEarnings as a single point (until backend provides a timeline)
+  const paymentData = [{ month: "This month", value: totals?.monthlyEarnings ?? 0 }]
+
   return (
     <div className="p-8 space-y-8">
       {/* Header */}
@@ -79,13 +99,19 @@ export default function Dashboard() {
       {/* Stats Cards */}
       <div>
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Dashboard Overview</h2>
+
+        {overviewQuery.isLoading && <div className="text-gray-500">Loading overview...</div>}
+        {overviewQuery.isError && <div className="text-red-500">Failed to load overview.</div>}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="bg-gradient-to-br from-blue-100 to-blue-50 border-0">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Total Earning</p>
-                  <p className="text-2xl font-bold text-gray-900">$7,000.00</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {totals ? `$${totals.totalEarnings}` : "—"}
+                  </p>
                 </div>
                 <div className="bg-blue-200 p-3 rounded-lg">
                   <DollarSign className="w-6 h-6 text-blue-600" />
@@ -99,7 +125,9 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-blue-100 mb-1">Total Order</p>
-                  <p className="text-2xl font-bold text-white">$7,000.00</p>
+                  <p className="text-2xl font-bold text-white">
+                    {totals ? totals.totalOrders : "—"}
+                  </p>
                 </div>
                 <div className="bg-blue-400 p-3 rounded-lg">
                   <ShoppingCart className="w-6 h-6 text-white" />
@@ -112,8 +140,10 @@ export default function Dashboard() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-blue-100 mb-1">Total Provider</p>
-                  <p className="text-2xl font-bold text-white">$7,000.00</p>
+                  <p className="text-sm text-blue-100 mb-1">Total Customers</p>
+                  <p className="text-2xl font-bold text-white">
+                    {totals ? totals.totalCustomers : "—"}
+                  </p>
                 </div>
                 <div className="bg-blue-300 p-3 rounded-lg">
                   <Users className="w-6 h-6 text-white" />
@@ -126,8 +156,10 @@ export default function Dashboard() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-300 mb-1">Total Admin Fees</p>
-                  <p className="text-2xl font-bold text-white">$7,000.00</p>
+                  <p className="text-sm text-slate-300 mb-1">Commission Paid</p>
+                  <p className="text-2xl font-bold text-white">
+                    {totals ? `$${totals.totalCommissionPaid}` : "—"}
+                  </p>
                 </div>
                 <div className="bg-slate-600 p-3 rounded-lg">
                   <TrendingUp className="w-6 h-6 text-white" />
@@ -143,7 +175,12 @@ export default function Dashboard() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Total Payment Volume</CardTitle>
-            <CardDescription>2024</CardDescription>
+            <CardDescription>
+              Last updated:{" "}
+              {overviewQuery.data?.lastUpdated
+                ? new Date(overviewQuery.data.lastUpdated).toLocaleString()
+                : "—"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -161,7 +198,7 @@ export default function Dashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Analytics</CardTitle>
-            <CardDescription>NOV 2024</CardDescription>
+            <CardDescription>Order status breakdown</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -176,16 +213,19 @@ export default function Dashboard() {
                   dataKey="value"
                 >
                   {analyticsData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+                    <Cell key={`cell-${index}`} fill={(entry as any).color} />
                   ))}
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
+
             <div className="mt-4 space-y-2">
               {analyticsData.map((item) => (
                 <div key={item.name} className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-sm text-gray-600">{item.name}</span>
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: (item as any).color }} />
+                  <span className="text-sm text-gray-600">
+                    {item.name} ({item.value})
+                  </span>
                 </div>
               ))}
             </div>
@@ -197,72 +237,35 @@ export default function Dashboard() {
       <Card>
         <CardHeader>
           <CardTitle>Total Order Range</CardTitle>
+          <CardDescription>
+            {analyticsQuery.data?.range?.start && analyticsQuery.data?.range?.end
+              ? `${new Date(analyticsQuery.data.range.start).toLocaleDateString()} - ${new Date(
+                  analyticsQuery.data.range.end
+                ).toLocaleDateString()}`
+              : "—"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={orderData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="month" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" />
-              <Tooltip />
-              <Bar dataKey="value" fill="#0052CC" radius={[8, 8, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {analyticsQuery.isLoading ? (
+            <div className="text-center text-gray-500 py-10">Loading order analytics...</div>
+          ) : analyticsQuery.isError ? (
+            <div className="text-center text-red-500 py-10">Failed to load order analytics.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={safeOrderTimeline}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="month" stroke="#9ca3af" />
+                <YAxis stroke="#9ca3af" />
+                <Tooltip />
+                <Bar dataKey="value" fill="#0052CC" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </CardContent>
       </Card>
 
-      {/* Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Customer Info</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Customer</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Order ID</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentCustomers.map((customer) => (
-                    <tr key={customer.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 text-gray-900">{customer.name}</td>
-                      <td className="py-3 px-4 text-gray-600">{customer.orderId}</td>
-                      <td className="py-3 px-4 text-gray-600">{customer.date}</td>
-                      <td className="py-3 px-4">
-                        <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
-                          {customer.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Review Order</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {reviewOrders.map((item) => (
-                <div key={item.order} className="flex items-center justify-between py-2 border-b last:border-0">
-                  <span className="text-gray-700">{item.order}</span>
-                  <span className="font-semibold text-gray-900">{item.amount}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Tables: keep mock for now (until you have endpoints) */}
+      {/* You can wire "Recent Customer Info" and "Review Order" once API exists */}
     </div>
   )
 }
