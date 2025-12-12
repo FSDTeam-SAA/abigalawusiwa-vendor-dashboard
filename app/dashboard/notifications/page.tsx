@@ -1,147 +1,243 @@
 "use client"
 
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
-import { useToast } from "@/components/toast-provider"
+import { useEffect, useMemo } from "react"
+import { toast } from "sonner"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { motion } from "framer-motion"
+import { cn } from "@/lib/utils"
+import { notificationApi } from "@/lib/api"
+import type { Notification } from "@/lib/api"
+import { getSocket } from "@/lib/socket"
+import { useSession } from "next-auth/react"
 
-const notifications = [
-  {
-    id: 1,
-    title: "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-    description: "Your subscription is nearing its renewal date. Review and make adjustments if needed.",
-    time: "1 hour ago",
-    read: false,
-  },
-  {
-    id: 2,
-    title: "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-    description: "We've noticed an unfamiliar login. Please verify your account activity",
-    time: "1 hour ago",
-    read: false,
-  },
-  {
-    id: 3,
-    title: "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-    description: "Someone wants to connect with you! Review your invitation and grow your network.",
-    time: "1 hour ago",
-    read: false,
-  },
-  {
-    id: 4,
-    title: "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-    description: "Here's a quick overview of your recent account activity for the past week.",
-    time: "1 hour ago",
-    read: true,
-  },
-  {
-    id: 5,
-    title: "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-    description: "Scheduled maintenance is coming up. Expect temporary downtime during end.",
-    time: "1 hour ago",
-    read: true,
-  },
-]
+type QueryData = {
+  notifications: Notification[]
+  pagination?: any
+}
 
-const filterOptions = [
-  { id: "comments", label: "Customer Comments", checked: true },
-  { id: "likes", label: "User Likes", checked: false },
-  { id: "reviews", label: "Product Reviews", checked: false },
-  { id: "mentions", label: "User Mentions", checked: false },
-  { id: "history", label: "Purchase History", checked: true },
-]
+const containerVariants = {
+  visible: { transition: { staggerChildren: 0.06 } },
+}
+
+const itemVariants = {
+  visible: { opacity: 1, y: 0 },
+}
+
+function formatTime(n: Notification) {
+  const raw = (n as any).createdAt ?? n.sentAt
+  if (!raw) return "Just now"
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return "Just now"
+  return d.toLocaleString()
+}
+
+function normalizeIncoming(payload: any): Notification | null {
+  if (!payload) return null
+  if (payload?._id) return payload as Notification
+  if (payload?.notification?._id) return payload.notification as Notification
+  if (payload?.data?._id) return payload.data as Notification
+  if (payload?.data?.notification?._id) return payload.data.notification as Notification
+  return null
+}
 
 export default function NotificationsPage() {
-  const [notificationList, setNotificationList] = useState(notifications)
-  const [filters, setFilters] = useState(filterOptions)
-  const { addToast } = useToast()
+  const queryClient = useQueryClient()
+  const { data: session } = useSession()
 
-  const handleMarkAllAsRead = () => {
-    setNotificationList(notificationList.map((n) => ({ ...n, read: true })))
-    addToast({
-      title: "Marked all as read",
-      type: "success",
-    })
-  }
+  const userId =
+    (session?.user as any)?.id ||
+    (session?.user as any)?._id ||
+    (session?.user as any)?.userId
 
-  const handleClearAll = () => {
-    setNotificationList([])
-    addToast({
-      title: "All notifications cleared",
-      type: "success",
-    })
-  }
+  const { data, isLoading, isError, error } = useQuery<QueryData>({
+    queryKey: ["notifications"],
+    queryFn: async () => {
+      const res = await notificationApi.getMyNotifications()
+      return res.data.data
+    },
+  })
 
-  const handleFilterChange = (id: string) => {
-    setFilters(filters.map((f) => (f.id === id ? { ...f, checked: !f.checked } : f)))
-  }
+  const notifications = data?.notifications ?? []
+
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => n.status === "unread").length,
+    [notifications]
+  )
+
+  // ✅ SOCKET
+  useEffect(() => {
+    if (!userId) return
+
+    const socket = getSocket()
+    socket.emit("notifications:join", userId)
+
+    const onNew = (payload: any) => {
+      const incoming = normalizeIncoming(payload)
+      if (!incoming) return
+
+      queryClient.setQueryData<QueryData>(["notifications"], (old) => {
+        const prev = old?.notifications ?? []
+        const exists = prev.some((n) => n._id === incoming._id)
+        if (exists) return old ?? { notifications: prev }
+        return { ...(old ?? {}), notifications: [incoming, ...prev] }
+      })
+
+      toast.info(incoming.title || "New notification")
+    }
+
+    socket.on("notification:new", onNew)
+
+    return () => {
+      socket.off("notification:new", onNew)
+      socket.emit("notifications:leave", userId)
+    }
+  }, [userId, queryClient])
+
+  const markAllAsReadMutation = useMutation({
+    mutationFn: async () => notificationApi.markAllRead(),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ["notifications"] })
+      const previous = queryClient.getQueryData<QueryData>(["notifications"])
+
+      queryClient.setQueryData<QueryData>(["notifications"], (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          notifications: old.notifications.map((n) => ({ ...n, status: "read" })),
+        }
+      })
+
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(["notifications"], ctx.previous)
+      toast.error("Failed to mark notifications")
+    },
+    onSuccess: () => toast.success("Marked all as read"),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+  })
+
+  const markSingleAsRead = useMutation({
+    mutationFn: async (id: string) => notificationApi.markStatus(id, "read"),
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: ["notifications"] })
+      const previous = queryClient.getQueryData<QueryData>(["notifications"])
+
+      queryClient.setQueryData<QueryData>(["notifications"], (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          notifications: old.notifications.map((n) =>
+            n._id === id ? { ...n, status: "read" } : n
+          ),
+        }
+      })
+
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(["notifications"], ctx.previous)
+      toast.error("Failed to mark as read")
+    },
+    onSuccess: () => toast.success("Marked as read"),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+  })
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Notification</h1>
-          <p className="text-gray-500">Stay Updated With Important Alerts and Reminders</p>
-        </div>
-        <Button onClick={handleMarkAllAsRead} className="bg-blue-600 hover:bg-blue-700">
-          Mark all as read
-        </Button>
+    <div className="container mx-auto py-24">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-bold flex items-center gap-2">
+          Notification
+          <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+            {unreadCount}
+          </span>
+        </h1>
+
+        <button
+          className={cn(
+            "text-sm text-gray-500 hover:text-gray-700",
+            markAllAsReadMutation.isPending && "opacity-50 cursor-not-allowed"
+          )}
+          onClick={() => markAllAsReadMutation.mutate()}
+          disabled={markAllAsReadMutation.isPending || unreadCount === 0}
+        >
+          {markAllAsReadMutation.isPending ? "Marking..." : "Mark As Read"}
+        </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-8">
-        {/* Notifications */}
-        <div className="col-span-2">
-          <div className="bg-white rounded-lg border border-gray-200">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Recent Notification</h2>
-              <p className="text-sm text-gray-500">Your latest notifications and alerts</p>
-            </div>
+      {isLoading && <div className="text-center text-gray-500">Loading notifications...</div>}
 
-            <div className="divide-y divide-gray-200">
-              {notificationList.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">No notifications</div>
-              ) : (
-                notificationList.map((notification) => (
-                  <div key={notification.id} className="p-6 hover:bg-gray-50 transition-colors">
-                    <div className="flex items-start gap-4">
-                      <div
-                        className={`w-2 h-2 rounded-full mt-2 ${notification.read ? "bg-gray-300" : "bg-blue-600"}`}
-                      />
-                      <div className="flex-1">
-                        <p className="font-semibold text-gray-900">{notification.title}</p>
-                        <p className="text-sm text-gray-600 mt-1">{notification.description}</p>
-                      </div>
-                      <span className="text-xs text-gray-500 whitespace-nowrap">{notification.time}</span>
-                    </div>
-                  </div>
-                ))
+      {isError && (
+        <div className="text-center text-red-500">
+          Error: {(error as any)?.message ?? "Failed to load notifications"}
+        </div>
+      )}
+
+      {!isLoading && notifications.length === 0 && !isError && (
+        <div className="text-center text-gray-500">No notifications found.</div>
+      )}
+
+      <motion.div
+        className="space-y-3"
+        variants={containerVariants}
+        initial={false}          // ✅ IMPORTANT: don’t start hidden
+        animate="visible"
+      >
+        {notifications.map((notification) => {
+          const isUnread = notification.status === "unread"
+
+          return (
+            <motion.div
+              key={notification._id}
+              className={cn(
+                "flex items-center gap-4 p-3 rounded-lg shadow-sm transition-colors duration-200",
+                isUnread ? "bg-blue-50" : "bg-white"
               )}
-            </div>
+              variants={itemVariants}
+            >
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-lg">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              </div>
 
-            <div className="p-6 border-t border-gray-200 flex gap-3">
-              <Button onClick={handleMarkAllAsRead} className="flex-1 bg-blue-600 hover:bg-blue-700">
-                Mark all
-              </Button>
-              <Button onClick={handleClearAll} variant="outline" className="flex-1 bg-transparent">
-                Clear all
-              </Button>
-            </div>
-          </div>
-        </div>
+              <div className="flex-grow">
+                <p className="text-sm text-gray-800 leading-snug">
+                  <span className="font-medium">{notification.title}</span>
+                  <span className="text-gray-600"> — {notification.message}</span>
+                </p>
+                <p className="text-xs text-gray-500 mt-1">{formatTime(notification)}</p>
+              </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6 h-fit">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Filter Options</h3>
-          <div className="space-y-3">
-            {filters.map((filter) => (
-              <label key={filter.id} className="flex items-center gap-3 cursor-pointer">
-                <Checkbox checked={filter.checked} onCheckedChange={() => handleFilterChange(filter.id)} />
-                <span className="text-sm text-gray-700">{filter.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      </div>
+              {isUnread && (
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    className={cn(
+                      "text-xs text-blue-600 hover:text-blue-700 underline",
+                      markSingleAsRead.isPending && "opacity-60 cursor-not-allowed"
+                    )}
+                    disabled={markSingleAsRead.isPending}
+                    onClick={() => markSingleAsRead.mutate(notification._id)}
+                  >
+                    {markSingleAsRead.isPending ? "Marking..." : "Mark as read"}
+                  </button>
+                  <span className="flex-shrink-0 w-2 h-2 bg-red-500 rounded-full" />
+                </div>
+              )}
+            </motion.div>
+          )
+        })}
+      </motion.div>
     </div>
   )
 }
