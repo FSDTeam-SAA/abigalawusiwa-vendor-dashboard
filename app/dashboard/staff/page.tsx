@@ -32,6 +32,7 @@ const API_BASE_URL =
 export default function StaffPage() {
   const { data: session, status } = useSession()
   const storeId = (session?.user as any)?.storeId
+
   const accessToken = (session?.user as any)?.accessToken // adjust if your token key is different
 
   const [staff, setStaff] = useState<StaffMember[]>([])

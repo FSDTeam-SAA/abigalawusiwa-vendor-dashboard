@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Edit2, Trash2, Search, Eye } from "lucide-react";
+import { Edit2, Trash2, Search, Eye } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import Link from "next/link";
 import { categoryApi, productApi } from "@/lib/api";
@@ -21,6 +21,9 @@ interface Product {
   status: "pending" | "approved" | "rejected";
   discountPrice?: number;
   isActive: boolean;
+
+  // ✅ Added for image
+  mainImage?: string;
 }
 
 export default function ProductsPage() {
@@ -50,7 +53,7 @@ export default function ProductsPage() {
     loadCategories();
   }, []);
 
-  // Fetch products when page changes or filters change
+  // Fetch products when page changes
   useEffect(() => {
     fetchProducts();
   }, [currentPage]);
@@ -84,12 +87,7 @@ export default function ProductsPage() {
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      const res = await productApi.getAll(
-        undefined,
-        undefined,
-        currentPage,
-        10
-      );
+      const res = await productApi.getAll(undefined, undefined, currentPage, 10);
 
       if (res.data.status) {
         setProducts(res.data.data.products);
@@ -143,7 +141,6 @@ export default function ProductsPage() {
 
   return (
     <div className="p-8 space-y-6">
-      {/* FILTER BAR */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-4">
@@ -208,7 +205,6 @@ export default function ProductsPage() {
                 className="bg-gray-100 border-0 px-4 py-2 rounded-md text-gray-600 appearance-none pr-8"
               >
                 <option value="all">All Child Categories</option>
-
                 {childCategories.map((c, i) => (
                   <option key={i} value={c.name}>
                     {c.name}
@@ -223,7 +219,6 @@ export default function ProductsPage() {
           </div>
         </CardHeader>
 
-        {/* PRODUCT TABLE */}
         <CardContent>
           {loading ? (
             <div className="space-y-3">
@@ -237,6 +232,9 @@ export default function ProductsPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b">
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">
+                        Product Image
+                      </th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">
                         Product Name
                       </th>
@@ -267,26 +265,50 @@ export default function ProductsPage() {
                         key={product._id}
                         className="border-b hover:bg-gray-50"
                       >
+                        {/* ✅ IMAGE */}
+                        <td className="py-3 px-4">
+                          <div className="w-12 h-12 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
+                            {product.mainImage ? (
+                              <img
+                                src={product.mainImage}
+                                alt={product.title}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <span className="text-xs text-gray-400">
+                                No image
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Name */}
                         <td className="py-3 px-4 font-medium text-gray-900">
                           {product.title}
                         </td>
 
+                        {/* Category */}
                         <td className="py-3 px-4 text-gray-700">
                           {product.mainCategory}
                         </td>
 
+                        {/* Sub */}
                         <td className="py-3 px-4 text-gray-700">
                           {product.subCategory?.name || "-"}
                         </td>
 
+                        {/* Child */}
                         <td className="py-3 px-4 text-gray-700">
                           {product.childCategory?.name || "-"}
                         </td>
 
+                        {/* Price */}
                         <td className="py-3 px-4 font-semibold">
                           ${product.price}
                         </td>
 
+                        {/* Status */}
                         <td className="py-3 px-4">
                           <span
                             className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -302,27 +324,21 @@ export default function ProductsPage() {
                           </span>
                         </td>
 
+                        {/* Actions */}
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2">
-                            {/* View Product */}
-                            <Link
-                              href={`/dashboard/products/view/${product._id}`}
-                            >
+                            <Link href={`/dashboard/products/view/${product._id}`}>
                               <button className="p-1 hover:bg-gray-200 rounded">
                                 <Eye className="w-4 h-4 text-gray-600" />
                               </button>
                             </Link>
 
-                            {/* Edit Product */}
-                            <Link
-                              href={`/dashboard/products/edit/${product._id}`}
-                            >
+                            <Link href={`/dashboard/products/edit/${product._id}`}>
                               <button className="p-1 hover:bg-gray-200 rounded">
                                 <Edit2 className="w-4 h-4 text-blue-600" />
                               </button>
                             </Link>
 
-                            {/* Delete Product */}
                             <button
                               onClick={() => setDeleteId(product._id)}
                               className="p-1 hover:bg-gray-200 rounded"
