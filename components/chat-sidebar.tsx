@@ -1,172 +1,99 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Search, MessageCircle } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { customerApi, adminApi } from "@/lib/api"
+import { useEffect, useMemo, useState } from "react";
+import { Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { chatApi } from "@/lib/api"; // <-- adjust path
+import { InboxConversation, InboxUser } from "@/types/chat";
 
-export interface Customer {
-  _id: string
-  name: string
-  email: string
-  profileImage?: string
-  totalOrders?: number
-  moneySpent?: number
-  // optional flag so you know who you're talking to on the parent side if needed
-  userType?: "customer" | "admin"
-}
+type ChatRow = {
+  conversationId: string;
+  storeId?: string;
+  otherUser: InboxUser;
+  lastMessageText?: string;
+  lastMessageAt?: string;
+};
 
 interface ChatSidebarProps {
-  selectedCustomer: Customer | null
-  onSelectCustomer: (customer: Customer) => void
-  onStartConversation: (customer: Customer) => void
+  selectedConversationId: string | null;
+  onSelectConversation: (row: ChatRow) => void;
+  currentUserId: string; // <-- needed to know who is "other user"
 }
 
 export function ChatSidebar({
-  selectedCustomer,
-  onSelectCustomer,
-  onStartConversation,
+  selectedConversationId,
+  onSelectConversation,
+  currentUserId,
 }: ChatSidebarProps) {
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [admins, setAdmins] = useState<Customer[]>([])
-  const [loading, setLoading] = useState(false)
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [searchTerm, setSearchTerm] = useState("")
+  const [rows, setRows] = useState<ChatRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
-  const fetchData = async () => {
+  const fetchInbox = async () => {
     try {
-      setLoading(true)
+      setLoading(true);
+      const res = await chatApi.getInbox();
 
-      // Fetch customers (paginated)
-      const customerResponse = await customerApi.getAll(page, 10)
-      const customersData = customerResponse?.data?.data?.customers || []
-      const mappedCustomers: Customer[] = customersData.map((c: any) => ({
-        _id: c._id,
-        name: c.name || c.fullName || c.email || "Unknown",
-        email: c.email || "",
-        profileImage: c.profileImage || c.avatar,
-        totalOrders: c.totalOrders,
-        moneySpent: c.moneySpent,
-        userType: "customer",
-      }))
+      const inbox: InboxConversation[] = res?.data?.data || [];
 
-      setCustomers(mappedCustomers)
-      setTotalPages(customerResponse?.data?.data?.pagination?.totalPages || 1)
+      const mapped: ChatRow[] = inbox
+        .map((conv) => {
+          const other = conv.participants.find((p) => p.user._id !== currentUserId)?.user;
+          if (!other) return null;
 
-      // Fetch admins (usually smaller list, so you can request more)
-      const adminResponse = await adminApi.getAllAdmins(1, 50)
-      const adminsData = adminResponse?.data?.data?.admins || adminResponse?.data?.data || []
+          return {
+            conversationId: conv._id,
+            storeId: conv.store?._id,
+            otherUser: other,
+            lastMessageText: conv.lastMessage?.text,
+            lastMessageAt: conv.lastMessage?.createdAt,
+          };
+        })
+        .filter(Boolean) as ChatRow[];
 
-      const mappedAdmins: Customer[] = adminsData.map((a: any) => ({
-        _id: a._id,
-        name: a.name || a.fullName || a.email || "Unknown",
-        email: a.email || "",
-        profileImage: a.profileImage || a.avatar,
-        totalOrders: 0,
-        moneySpent: 0,
-        userType: "admin",
-      }))
+      // optional: sort by updatedAt/lastMessage time
+      mapped.sort((a, b) => {
+        const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+        const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+        return tb - ta;
+      });
 
-      setAdmins(mappedAdmins)
-    } catch (error) {
-      console.error("Failed to fetch customers/admins:", error)
+      setRows(mapped);
+    } catch (e) {
+      console.error("Failed to load inbox", e);
+      setRows([]);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    fetchData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page])
+    fetchInbox();
+  }, []);
 
-  const term = searchTerm.toLowerCase().trim()
+  const term = useMemo(() => searchTerm.toLowerCase().trim(), [searchTerm]);
 
-  const filterBySearch = (item: Customer) =>
-    item.name.toLowerCase().includes(term) || item.email.toLowerCase().includes(term)
-
-  const filteredCustomers = customers.filter(filterBySearch)
-  const filteredAdmins = admins.filter(filterBySearch)
-
-  const renderRow = (user: Customer) => (
-    <div
-      key={`${user.userType}-${user._id}`}
-      role="button"
-      tabIndex={0}
-      onClick={() => onSelectCustomer(user)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") onSelectCustomer(user)
-      }}
-      className={`group w-full p-4 border-b border-gray-100 text-left transition-colors cursor-pointer ${
-        selectedCustomer?._id === user._id ? "bg-blue-50" : "hover:bg-gray-50"
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        {/* Avatar */}
-        <div className="relative">
-          {user.profileImage ? (
-            <img
-              src={user.profileImage || "/placeholder.svg"}
-              alt={user.name}
-              className="w-12 h-12 rounded-full object-cover"
-            />
-          ) : (
-            <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-white font-semibold">
-              {user.name.charAt(0).toUpperCase()}
-            </div>
-          )}
-        </div>
-
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-gray-900 truncate">
-            {user.name}
-            {user.userType === "admin" && (
-              <span className="ml-1 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
-                Admin
-              </span>
-            )}
-          </p>
-          <p className="text-xs text-gray-500 truncate">{user.email}</p>
-          {user.userType === "customer" && (
-            <p className="text-xs text-gray-600 mt-1">
-              Orders: {user.totalOrders || 0} • Spent: ${user.moneySpent || 0}
-            </p>
-          )}
-        </div>
-
-        {/* Message Button */}
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.stopPropagation()
-            onStartConversation(user)
-          }}
-          className="opacity-0 group-hover:opacity-100"
-        >
-          <MessageCircle className="w-4 h-4" />
-        </Button>
-      </div>
-    </div>
-  )
+  const filtered = useMemo(() => {
+    if (!term) return rows;
+    return rows.filter((r) => {
+      const name = (r.otherUser.name || "").toLowerCase();
+      const role = (r.otherUser.role || "").toLowerCase();
+      return name.includes(term) || role.includes(term);
+    });
+  }, [rows, term]);
 
   return (
     <div className="w-80 border-r border-gray-200 flex flex-col bg-white">
-      {/* Header */}
       <div className="p-6 border-b border-gray-200">
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Messages</h2>
-        <p className="text-sm text-gray-500 mb-4">Chat with admins & customers</p>
+        <p className="text-sm text-gray-500">Inbox (from /chat/inbox)</p>
       </div>
 
-      {/* Search */}
       <div className="p-4 border-b border-gray-200">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <Input
-            placeholder="Search by name or email"
+            placeholder="Search by name or role"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 bg-gray-50"
@@ -174,61 +101,65 @@ export function ChatSidebar({
         </div>
       </div>
 
-      {/* List */}
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="p-4 text-center text-gray-500">Loading users...</div>
-        ) : filteredAdmins.length === 0 && filteredCustomers.length === 0 ? (
-          <div className="p-4 text-center text-gray-500">No admins or customers found</div>
+          <div className="p-4 text-center text-gray-500">Loading inbox...</div>
+        ) : filtered.length === 0 ? (
+          <div className="p-4 text-center text-gray-500">No conversations found</div>
         ) : (
-          <>
-            {/* Admins */}
-            {filteredAdmins.length > 0 && (
-              <div>
-                <div className="px-4 pt-3 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Admins
-                </div>
-                {filteredAdmins.map(renderRow)}
-              </div>
-            )}
+          filtered.map((row) => {
+            const isSelected = selectedConversationId === row.conversationId;
 
-            {/* Customers */}
-            {filteredCustomers.length > 0 && (
-              <div>
-                <div className="px-4 pt-3 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Customers
+            return (
+              <div
+                key={row.conversationId}
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelectConversation(row)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") onSelectConversation(row);
+                }}
+                className={`w-full p-4 border-b border-gray-100 text-left transition-colors cursor-pointer ${
+                  isSelected ? "bg-blue-50" : "hover:bg-gray-50"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="relative">
+                    {row.otherUser.profileImage ? (
+                      <img
+                        src={row.otherUser.profileImage || "/placeholder.svg"}
+                        alt={row.otherUser.name}
+                        className="w-12 h-12 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-white font-semibold">
+                        {(row.otherUser.name || "?").charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 truncate">
+                      {row.otherUser.name}{" "}
+                      <span className="ml-1 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+                        {row.otherUser.role}
+                      </span>
+                    </p>
+
+                    <p className="text-xs text-gray-500 truncate">
+                      {row.lastMessageText ? row.lastMessageText : "No messages yet"}
+                    </p>
+
+                    {row.storeId && (
+                      <p className="text-[10px] text-gray-400 mt-1 truncate">Store: {row.storeId}</p>
+                    )}
+                  </div>
                 </div>
-                {filteredCustomers.map(renderRow)}
               </div>
-            )}
-          </>
+            );
+          })
         )}
       </div>
-
-      {/* Pagination (customers only) */}
-      {totalPages > 1 && (
-        <div className="p-4 border-t border-gray-200 flex gap-2 justify-center">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-            disabled={page === 1}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-gray-600 flex items-center px-2">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-            disabled={page === totalPages}
-          >
-            Next
-          </Button>
-        </div>
-      )}
     </div>
-  )
+  );
 }

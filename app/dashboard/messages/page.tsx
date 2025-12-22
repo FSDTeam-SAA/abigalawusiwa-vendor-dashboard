@@ -1,82 +1,56 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { ChatSidebar, type Customer } from "@/components/chat-sidebar"
-import { ChatWindow } from "@/components/chat-window"
-import { useChat, type Conversation } from "@/hooks/use-chat"
-import { useToast } from "@/components/toast-provider"
+import { useEffect, useState } from "react";
+import { ChatSidebar } from "@/components/chat-sidebar";
+import { ChatWindow } from "@/components/chat-window";
+import { useChat, type Conversation } from "@/hooks/use-chat";
+import { useToast } from "@/components/toast-provider";
+
+type ChatRow = {
+  conversationId: string;
+  storeId?: string;
+  otherUser: { _id: string; name: string; role: string; profileImage?: string };
+};
 
 export default function MessagesPage() {
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const { addToast } = useToast();
 
-  const { addToast } = useToast()
+  // ✅ you must get this from auth (session/user store/etc.)
+  const currentUserId = "PUT_CURRENT_USER_ID_HERE";
 
-  const {
-    messages,
-    conversations,
-    loading,
-    fetchInbox,
-    fetchMessages,
-    sendMessage,
-    startConversation,
-  } = useChat(selectedConversation?._id)
+  const { messages, loading, fetchMessages, sendMessage } = useChat(selectedConversation?._id);
 
-  // Fetch inbox on mount
-  useEffect(() => {
-    fetchInbox()
-  }, [fetchInbox])
-
-  const handleSelectCustomer = (customer: Customer) => {
-    setSelectedCustomer(customer)
-
-    // Find if conversation exists with this customer
-    const existingConversation = conversations.find((conv) =>
-      conv.participants.some((p) => p.user._id === customer._id),
-    )
-
-    if (existingConversation) {
-      setSelectedConversation(existingConversation)
-      fetchMessages(existingConversation._id)
-    } else {
-      setSelectedConversation(null)
-    }
-  }
-
-  const handleStartConversation = async (customer: Customer) => {
+  const openConversation = async (row: ChatRow) => {
     try {
-      // TODO: replace "placeholder-store-id" with real storeId from your data
-      const conversation = await startConversation("placeholder-store-id")
-      setSelectedConversation(conversation)
-
-      console.log(conversation, "conversation")
-      fetchMessages(conversation._id)
-
-      addToast({
-        title: "Conversation started",
-        description: `Chat with ${customer.name}`,
-        type: "success",
-      })
-    } catch (error) {
-      addToast({
-        title: "Failed to start conversation",
-        type: "error",
-      })
+      // if your hook expects a Conversation object, store minimal shape:
+      setSelectedConversation({ _id: row.conversationId } as Conversation);
+      await fetchMessages(row.conversationId);
+    } catch (e) {
+      addToast({ title: "Failed to open conversation", type: "error" });
     }
-  }
+  };
 
-  const handleSendMessage = async (text: string) => {
-    if (!selectedConversation) return
-    await sendMessage(text)
-  }
+  const handleSendMessage = async (text: string, file: File | null) => {
+    if (!selectedConversation) return;
+    try {
+      // update your hook to support files if you want:
+      // await sendMessage(text, file ? [file] : undefined);
+
+      await sendMessage(text); // current behavior
+    } catch (e) {
+      addToast({ title: "Failed to send message", type: "error" });
+    }
+  };
 
   return (
     <div className="flex h-full bg-white gap-0">
       <ChatSidebar
-        selectedCustomer={selectedCustomer}
-        onSelectCustomer={handleSelectCustomer}
-        onStartConversation={handleStartConversation}
+        currentUserId={currentUserId}
+        selectedConversationId={selectedConversation?._id ?? null}
+        onSelectConversation={openConversation}
       />
+
       <ChatWindow
         conversation={selectedConversation}
         messages={messages}
@@ -84,5 +58,5 @@ export default function MessagesPage() {
         onSendMessage={handleSendMessage}
       />
     </div>
-  )
+  );
 }
