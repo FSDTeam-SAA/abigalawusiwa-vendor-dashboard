@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,13 +10,7 @@ import { useToast } from "@/components/toast-provider"
 import { couponApi } from "@/lib/api"
 import { DeleteModal } from "@/components/delete-modal"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 
 interface Coupon {
   _id: string
@@ -28,6 +21,15 @@ interface Coupon {
   usageLimit: number
   usedCount: number
   active: boolean
+  image?: string | null
+}
+
+type FormState = {
+  code: string
+  discountType: "percentage" | "fixed"
+  discountValue: string
+  expiryDate: string
+  usageLimit: string
 }
 
 export default function CouponsPage() {
@@ -36,23 +38,38 @@ export default function CouponsPage() {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [formData, setFormData] = useState({
+
+  const [formData, setFormData] = useState<FormState>({
     code: "",
-    discountType: "percentage" as const,
+    discountType: "percentage",
     discountValue: "",
     expiryDate: "",
     usageLimit: "",
   })
+
+  // ✅ image states
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+
   const { addToast } = useToast()
 
   useEffect(() => {
     fetchCoupons()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage])
+
+  // cleanup blob url
+  useEffect(() => {
+    return () => {
+      if (imagePreview?.startsWith("blob:")) URL.revokeObjectURL(imagePreview)
+    }
+  }, [imagePreview])
 
   const resetForm = () => {
     setFormData({
@@ -63,6 +80,8 @@ export default function CouponsPage() {
       usageLimit: "",
     })
     setEditingId(null)
+    setImageFile(null)
+    setImagePreview(null)
   }
 
   const fetchCoupons = async () => {
@@ -94,20 +113,24 @@ export default function CouponsPage() {
     setLoading(true)
 
     try {
-      const payload = {
-        code: formData.code.toUpperCase(),
-        discountType: formData.discountType,
-        discountValue: Number(formData.discountValue),
-        expiryDate: new Date(formData.expiryDate).toISOString(),
-        usageLimit: Number(formData.usageLimit) || 100,
-        active: true,
+      // ✅ multipart payload for multer.single("image")
+      const fd = new FormData()
+      fd.append("code", formData.code.toUpperCase())
+      fd.append("discountType", formData.discountType)
+      fd.append("discountValue", String(Number(formData.discountValue)))
+      fd.append("expiryDate", new Date(formData.expiryDate).toISOString())
+      fd.append("usageLimit", String(Number(formData.usageLimit) || 100))
+      fd.append("active", "true")
+
+      if (imageFile) {
+        fd.append("image", imageFile) // field name must be "image"
       }
 
       if (editingId) {
-        await couponApi.update(editingId, payload)
+        await couponApi.update(editingId, fd)
         addToast({ title: "Coupon updated successfully", type: "success" })
       } else {
-        await couponApi.create(payload)
+        await couponApi.create(fd)
         addToast({ title: "Coupon created successfully", type: "success" })
       }
 
@@ -151,11 +174,31 @@ export default function CouponsPage() {
       expiryDate: new Date(coupon.expiryDate).toISOString().split("T")[0],
       usageLimit: coupon.usageLimit.toString(),
     })
+
     setEditingId(coupon._id)
+
+    // ✅ preview existing image (if your backend returns relative path, it will still render if same domain)
+    setImageFile(null)
+    setImagePreview(coupon.image || null)
+
     setIsFormOpen(true)
   }
 
-  const filteredCoupons = coupons.filter((c) => c.code.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredCoupons = useMemo(() => {
+    return coupons.filter((c) => c.code.toLowerCase().includes(searchTerm.toLowerCase()))
+  }, [coupons, searchTerm])
+
+  const onPickImage = (file: File | null) => {
+    setImageFile(file)
+    if (imagePreview?.startsWith("blob:")) URL.revokeObjectURL(imagePreview)
+
+    if (file) {
+      setImagePreview(URL.createObjectURL(file))
+    } else {
+      // keep existing preview if editing, otherwise clear
+      setImagePreview(editingId ? imagePreview : null)
+    }
+  }
 
   return (
     <div className="p-8 space-y-6">
@@ -200,6 +243,7 @@ export default function CouponsPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b">
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Image</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Coupon Code</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Discount</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Usage</th>
@@ -212,6 +256,18 @@ export default function CouponsPage() {
                     {filteredCoupons.length > 0 ? (
                       filteredCoupons.map((coupon) => (
                         <tr key={coupon._id} className="border-b hover:bg-gray-50">
+                          <td className="py-3 px-4">
+                            {coupon.image ? (
+                              <img
+                                src={coupon.image}
+                                alt={coupon.code}
+                                className="h-10 w-10 rounded border object-cover"
+                              />
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
+
                           <td className="py-3 px-4 text-gray-900 font-medium">{coupon.code}</td>
                           <td className="py-3 px-4 text-gray-600">
                             {coupon.discountValue}
@@ -220,9 +276,7 @@ export default function CouponsPage() {
                           <td className="py-3 px-4 text-gray-600">
                             {coupon.usedCount}/{coupon.usageLimit}
                           </td>
-                          <td className="py-3 px-4 text-gray-600">
-                            {new Date(coupon.expiryDate).toLocaleDateString()}
-                          </td>
+                          <td className="py-3 px-4 text-gray-600">{new Date(coupon.expiryDate).toLocaleDateString()}</td>
                           <td className="py-3 px-4">
                             <span
                               className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -254,7 +308,7 @@ export default function CouponsPage() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={6} className="py-6 text-center text-gray-500">
+                        <td colSpan={7} className="py-6 text-center text-gray-500">
                           No coupons found
                         </td>
                       </tr>
@@ -309,13 +363,12 @@ export default function CouponsPage() {
                 <Input
                   placeholder="SUMMER20"
                   value={formData.code}
-                  onChange={(e) =>
-                    setFormData({ ...formData, code: e.target.value.toUpperCase() })
-                  }
+                  onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
                   className="bg-white"
                   disabled={loading}
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Discount Type</label>
                 <select
@@ -333,52 +386,67 @@ export default function CouponsPage() {
                   <option value="fixed">Fixed ($)</option>
                 </select>
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Discount Value</label>
                 <Input
                   placeholder="20"
                   type="number"
                   value={formData.discountValue}
-                  onChange={(e) =>
-                    setFormData({ ...formData, discountValue: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, discountValue: e.target.value })}
                   className="bg-white"
                   disabled={loading}
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date</label>
                 <Input
                   type="date"
                   value={formData.expiryDate}
-                  onChange={(e) =>
-                    setFormData({ ...formData, expiryDate: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
                   className="bg-white"
                   disabled={loading}
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Usage Limit</label>
                 <Input
                   placeholder="100"
                   type="number"
                   value={formData.usageLimit}
-                  onChange={(e) =>
-                    setFormData({ ...formData, usageLimit: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, usageLimit: e.target.value })}
                   className="bg-white"
                   disabled={loading}
                 />
               </div>
+
+              {/* ✅ IMAGE UPLOAD */}
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Coupon Image</label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  className="bg-white"
+                  disabled={loading}
+                  onChange={(e) => onPickImage(e.target.files?.[0] || null)}
+                />
+
+                {imagePreview && (
+                  <div className="mt-3">
+                    <img
+                      src={imagePreview}
+                      alt="Coupon preview"
+                      className="h-24 w-24 rounded-lg border object-cover"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
 
             <DialogFooter className="flex gap-2">
-              <Button
-                type="submit"
-                disabled={loading}
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
-              >
+              <Button type="submit" disabled={loading} className="flex-1 bg-blue-600 hover:bg-blue-700">
                 {loading ? "Saving..." : editingId ? "Update" : "Add"} Coupon
               </Button>
               <Button

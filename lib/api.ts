@@ -134,11 +134,34 @@ export const customerApi = {
 export const couponApi = {
   getAll: (page = 1, limit = 10) =>
     getApi().get(`/promocode?page=${page}&limit=${limit}`),
-  getById: (id: string) => getApi().get(`/promoCode/${id}`),
-  create: (data: any) => getApi().post("/promocode", data),
-  update: (id: string, data: any) => getApi().patch(`/promoCode/${id}`, data),
-  delete: (id: string) => getApi().delete(`/promoCode/${id}`),
-};
+
+  getById: (id: string) => getApi().get(`/promocode/${id}`),
+
+  create: (data: any) => {
+    // ✅ If FormData, send multipart
+    if (data instanceof FormData) {
+      return getApi().post("/promocode", data, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+    }
+    // fallback JSON
+    return getApi().post("/promocode", data)
+  },
+
+  update: (id: string, data: any) => {
+    // ✅ If FormData, send multipart
+    if (data instanceof FormData) {
+      return getApi().put(`/promocode/${id}`, data, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+    }
+    // fallback JSON
+    return getApi().put(`/promocode/${id}`, data)
+  },
+
+  delete: (id: string) => getApi().delete(`/promocode/${id}`),
+}
+
 
 export const erningApi = {
   getEarnings: () => getApi().get("/vendor/earnings"),
