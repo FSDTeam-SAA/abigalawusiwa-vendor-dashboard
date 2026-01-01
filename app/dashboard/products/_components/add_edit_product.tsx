@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ArrowLeft, Upload } from "lucide-react"
+import { ArrowLeft, Upload, FileText, Image as ImageIcon, Video } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/components/toast-provider"
 import { productApi, categoryApi } from "@/lib/api"
@@ -28,20 +28,20 @@ interface ProductFormData {
   regularPrice: string
   discountPrice: string
   tags: string[]
-  document: string
-  photo: string
-  images: string[]
+
   stockQuantity?: string
   wholesalePrice?: string
   size?: string
   brands?: string
   colour?: string
+
   vehicleCondition?: string
   registration?: string
   specialFeatures?: string
   fuelType?: string
   cc?: string
   transmission?: string
+
   serviceFeatures?: string
 }
 
@@ -58,20 +58,20 @@ const initialFormData: ProductFormData = {
   regularPrice: "",
   discountPrice: "",
   tags: [],
-  document: "",
-  photo: "",
-  images: [],
+
   stockQuantity: "",
   wholesalePrice: "",
   size: "",
   brands: "",
   colour: "",
+
   vehicleCondition: "",
   registration: "",
   specialFeatures: "",
   fuelType: "",
   cc: "",
   transmission: "",
+
   serviceFeatures: "",
 }
 
@@ -107,17 +107,33 @@ export default function AddEditProductPage({ productId }: { productId?: string }
   const { data: session } = useSession()
 
   const isEditing = !!productId
-
-  console.log(isEditing)
   const storeId = (session?.user as any)?.storeId
 
   // categories from API
   const [categories, setCategories] = useState<Category[]>([])
 
-  // main image upload
+  // ─────────────────────────────
+  // File states (MATCH BACKEND)
+  // ─────────────────────────────
+
+  // main image upload (mainImage)
   const [mainImageFile, setMainImageFile] = useState<File | null>(null)
   const [mainImagePreview, setMainImagePreview] = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
+
+  // gallery upload (imageGallery)
+  const [galleryFiles, setGalleryFiles] = useState<File[]>([])
+  const [galleryPreviews, setGalleryPreviews] = useState<string[]>([])
+  const galleryInputRef = useRef<HTMLInputElement | null>(null)
+
+  // video upload (video)
+  const [videoFile, setVideoFile] = useState<File | null>(null)
+  const [videoPreview, setVideoPreview] = useState<string | null>(null)
+  const videoInputRef = useRef<HTMLInputElement | null>(null)
+
+  // documents upload (documents)
+  const [documentFiles, setDocumentFiles] = useState<File[]>([])
+  const documentsInputRef = useRef<HTMLInputElement | null>(null)
 
   // ─────────────────────────────
   // Helpers: mapping mainCategory <-> tab
@@ -129,11 +145,23 @@ export default function AddEditProductPage({ productId }: { productId?: string }
   }
 
   const mainCategoryToTab = (main: string): ProductType => {
-    const m = main.toLowerCase()
+    const m = (main || "").toLowerCase()
     if (m === "vehicles") return "vehicles"
     if (m === "services") return "services"
     return "generalgoods"
   }
+
+  // ─────────────────────────────
+  // Cleanup object URLs
+  // ─────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (mainImagePreview?.startsWith("blob:")) URL.revokeObjectURL(mainImagePreview)
+      galleryPreviews.forEach((p) => p.startsWith("blob:") && URL.revokeObjectURL(p))
+      if (videoPreview?.startsWith("blob:")) URL.revokeObjectURL(videoPreview)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ─────────────────────────────
   // Load categories
@@ -144,7 +172,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
         const res = await categoryApi.getAll(1, 50)
         const cats: Category[] = res.data?.data?.categories || []
         setCategories(cats)
-      } catch (err) {
+      } catch {
         addToast({ title: "Failed to load categories", type: "error" })
       }
     }
@@ -160,48 +188,54 @@ export default function AddEditProductPage({ productId }: { productId?: string }
         setLoading(false)
         return
       }
+
       try {
         const res = await productApi.getById(productId)
-        const p = res.data.data
+        const p = res.data?.data
 
         setFormData((prev) => ({
           ...prev,
-          title: p.title || "",
-          briefDescription: p.briefDescription || "",
-          description: p.description || "",
-          deliveryPolicy: p.deliveryAndReturnPolicy || "",
+          title: p?.title || "",
+          briefDescription: p?.briefDescription || "",
+          description: p?.description || "",
+          deliveryPolicy: p?.deliveryAndReturnPolicy || "",
 
-          categoryId: p.category?._id || "",
-          subCategoryId: p.subCategory?._id || "",
-          childCategory: p.childCategory?._id || "",
+          categoryId: p?.category?._id || "",
+          subCategoryId: p?.subCategory?._id || "",
+          childCategory: p?.childCategory?._id || "",
 
-          regularPrice: String(p.price || ""),
-          discountPrice: String(p.discountPrice || ""),
-          tags: p.tags || [],
-          stockQuantity: p.generalGoods?.stockQuantity || "",
-          wholesalePrice: p.generalGoods?.wholesalePrice || "",
-          size: p.generalGoods?.size || "",
-          brands: p.generalGoods?.brand || "",
-          colour: p.generalGoods?.color?.[0] || "",
-          vehicleCondition: p.vehicleCondition || "",
-          registration: p.registration || "",
-          specialFeatures: p.specialFeatures || "",
-          fuelType: p.fuelType || "",
-          cc: p.cc || "",
-          transmission: p.transmission || "",
-          serviceFeatures: p.serviceFeatures || "",
+          regularPrice: String(p?.price ?? ""),
+          discountPrice: String(p?.discountPrice ?? ""),
+          tags: p?.tags || [],
+
+          stockQuantity: p?.generalGoods?.stockQuantity || "",
+          wholesalePrice: p?.generalGoods?.wholesalePrice || "",
+          size: p?.generalGoods?.size || "",
+          brands: p?.generalGoods?.brand || "",
+          colour: p?.generalGoods?.color?.[0] || "",
+
+          vehicleCondition: p?.vehicleCondition || "",
+          registration: p?.registration || "",
+          specialFeatures: p?.specialFeatures || "",
+          fuelType: p?.fuelType || "",
+          cc: p?.cc || "",
+          transmission: p?.transmission || "",
+
+          serviceFeatures: p?.serviceFeatures || "",
         }))
 
-        if (p.mainCategory) {
-          setActiveTab(mainCategoryToTab(p.mainCategory))
-        }
+        if (p?.mainCategory) setActiveTab(mainCategoryToTab(p.mainCategory))
 
-        if (p.mainImage || p.photo) {
-          setMainImagePreview(p.mainImage || p.photo)
-        }
+        // existing main image preview (URL from backend)
+        if (p?.mainImage || p?.photo) setMainImagePreview(p?.mainImage || p?.photo)
+
+        // NOTE:
+        // If your API returns gallery/video/doc URLs, you can set previews here too.
+        // We do NOT set Files here because you can’t re-upload URLs as Files without fetching blobs.
 
         setLoading(false)
       } catch (err) {
+        console.error(err)
         addToast({ title: "Failed to load product", type: "error" })
         setLoading(false)
       }
@@ -219,46 +253,61 @@ export default function AddEditProductPage({ productId }: { productId?: string }
     (c) => c.mainCategory.toLowerCase() === currentMainCategoryLabel.toLowerCase(),
   )
 
-  const selectedCategory = filteredCategories.find(
-    (c) => c._id === formData.categoryId,
-  )
-
+  const selectedCategory = filteredCategories.find((c) => c._id === formData.categoryId)
   const subCategoryOptions: SubCategory[] = selectedCategory?.subCategories || []
 
-  const selectedSubCategory = subCategoryOptions.find(
-    (s) => s._id === formData.subCategoryId,
-  )
-
-  const childCategoryOptions: ChildCategory[] =
-    selectedSubCategory?.childCategories || []
+  const selectedSubCategory = subCategoryOptions.find((s) => s._id === formData.subCategoryId)
+  const childCategoryOptions: ChildCategory[] = selectedSubCategory?.childCategories || []
 
   // ─────────────────────────────
   // Tags
   // ─────────────────────────────
   const handleAddTag = () => {
-    if (tagInput.trim()) {
-      setFormData((prev) => ({ ...prev, tags: [...prev.tags, tagInput.trim()] }))
-      setTagInput("")
-    }
+    const t = tagInput.trim()
+    if (!t) return
+    setFormData((prev) => ({ ...prev, tags: [...prev.tags, t] }))
+    setTagInput("")
   }
 
   const handleRemoveTag = (index: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      tags: prev.tags.filter((_, i) => i !== index),
-    }))
+    setFormData((prev) => ({ ...prev, tags: prev.tags.filter((_, i) => i !== index) }))
   }
 
   // ─────────────────────────────
-  // Image upload (main image)
+  // File handlers (MATCH BACKEND FIELD NAMES)
   // ─────────────────────────────
-  const handlePhotoClick = () => photoInputRef.current?.click()
+  const handleMainImageClick = () => photoInputRef.current?.click()
+  const handleGalleryClick = () => galleryInputRef.current?.click()
+  const handleVideoClick = () => videoInputRef.current?.click()
+  const handleDocumentsClick = () => documentsInputRef.current?.click()
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMainImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setMainImageFile(file)
     setMainImagePreview(URL.createObjectURL(file))
+  }
+
+  const handleGalleryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+
+    const next = files.slice(0, 10) // max 10
+    setGalleryFiles(next)
+    setGalleryPreviews(next.map((f) => URL.createObjectURL(f)))
+  }
+
+  const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setVideoFile(file)
+    setVideoPreview(URL.createObjectURL(file))
+  }
+
+  const handleDocumentsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    setDocumentFiles(files.slice(0, 5)) // max 5
   }
 
   // ─────────────────────────────
@@ -283,27 +332,28 @@ export default function AddEditProductPage({ productId }: { productId?: string }
       // core product info
       fd.append("store", storeId)
       fd.append("title", formData.title)
+      fd.append("briefDescription", formData.briefDescription || "")
       fd.append("description", formData.description)
       fd.append("deliveryAndReturnPolicy", formData.deliveryPolicy)
 
-      // 🔗 category chain (matches your Postman body)
+      // category chain
       fd.append("category", formData.categoryId)
       fd.append("subCategory", formData.subCategoryId)
       fd.append("childCategory", formData.childCategory)
 
-      const mainCategoryStr = tabToMainCategory(activeTab) // "general goods" / "vehicles" / "services"
+      const mainCategoryStr = tabToMainCategory(activeTab)
       fd.append("mainCategory", mainCategoryStr)
 
-      // numbers & pricing
-      fd.append("stockQuantity", formData.stockQuantity || "")
+      // pricing
       fd.append("price", formData.regularPrice || "0")
       fd.append("discountPrice", formData.discountPrice || "0")
-      fd.append("wholesalePrice", formData.wholesalePrice || "")
 
-      // general goods extras
+      // general goods extras (only if relevant)
+      fd.append("stockQuantity", formData.stockQuantity || "")
+      fd.append("wholesalePrice", formData.wholesalePrice || "")
       fd.append("size", formData.size || "")
       fd.append("brand", formData.brands || "")
-      fd.append("measurement", "") // optional – you can wire a field if needed
+      fd.append("measurement", "") // optional
       fd.append("color", formData.colour || "")
 
       // vehicle / service extras
@@ -318,19 +368,22 @@ export default function AddEditProductPage({ productId }: { productId?: string }
         fd.append("serviceFeatures", formData.serviceFeatures || "")
       }
 
-      // tags – backend in screenshot uses comma-separated string
-      if (formData.tags.length) {
-        fd.append("tags", formData.tags.join(","))
-      }
+      // tags (comma-separated)
+      if (formData.tags.length) fd.append("tags", formData.tags.join(","))
 
-      // main image
-      if (mainImageFile) {
-        fd.append("mainImage", mainImageFile)
-      }
+      // ─────────────────────────────
+      // FILES (MATCH BACKEND MULTER)
+      // ─────────────────────────────
+      if (mainImageFile) fd.append("mainImage", mainImageFile)
+
+      galleryFiles.forEach((f) => fd.append("imageGallery", f))
+      if (videoFile) fd.append("video", videoFile)
+      documentFiles.forEach((f) => fd.append("documents", f))
 
       if (isEditing) {
         await productApi.update(productId!, fd)
         addToast({ title: "Product updated successfully", type: "success" })
+        router.push("/dashboard/products")
       } else {
         await productApi.create(fd)
         addToast({ title: "Product created successfully", type: "success" })
@@ -376,29 +429,23 @@ export default function AddEditProductPage({ productId }: { productId?: string }
           rows={3}
           className="w-full px-3 py-2 border rounded-lg"
           value={formData.briefDescription}
-          onChange={(e) =>
-            setFormData({ ...formData, briefDescription: e.target.value })
-          }
+          onChange={(e) => setFormData({ ...formData, briefDescription: e.target.value })}
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-2">
-          Delivery &amp; Return Policy
-        </label>
+        <label className="block text-sm font-medium mb-2">Delivery &amp; Return Policy</label>
         <textarea
           rows={3}
           className="w-full px-3 py-2 border rounded-lg"
           value={formData.deliveryPolicy}
-          onChange={(e) =>
-            setFormData({ ...formData, deliveryPolicy: e.target.value })
-          }
+          onChange={(e) => setFormData({ ...formData, deliveryPolicy: e.target.value })}
         />
       </div>
 
       {/* Category Chain Selects */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Category (top-level doc) */}
+        {/* Category */}
         <div>
           <label className="block text-sm font-medium mb-2">
             Category <span className="text-red-500">*</span>
@@ -457,9 +504,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
           </label>
           <select
             value={formData.childCategory}
-            onChange={(e) =>
-              setFormData({ ...formData, childCategory: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, childCategory: e.target.value })}
             className="w-full px-3 py-2 border rounded-lg"
             disabled={!formData.subCategoryId}
           >
@@ -479,9 +524,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
           <Input
             type="number"
             value={formData.regularPrice}
-            onChange={(e) =>
-              setFormData({ ...formData, regularPrice: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, regularPrice: e.target.value })}
           />
         </div>
 
@@ -490,9 +533,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
           <Input
             type="number"
             value={formData.discountPrice}
-            onChange={(e) =>
-              setFormData({ ...formData, discountPrice: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, discountPrice: e.target.value })}
           />
         </div>
       </div>
@@ -502,14 +543,13 @@ export default function AddEditProductPage({ productId }: { productId?: string }
   const renderGeneralGoodsFields = () => (
     <>
       {renderCommonFields()}
+
       <div>
         <label className="block text-sm font-medium mb-2">Stock Quantity</label>
         <Input
           type="number"
           value={formData.stockQuantity}
-          onChange={(e) =>
-            setFormData({ ...formData, stockQuantity: e.target.value })
-          }
+          onChange={(e) => setFormData({ ...formData, stockQuantity: e.target.value })}
         />
       </div>
 
@@ -519,9 +559,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
           <Input
             type="number"
             value={formData.wholesalePrice}
-            onChange={(e) =>
-              setFormData({ ...formData, wholesalePrice: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, wholesalePrice: e.target.value })}
           />
         </div>
 
@@ -529,9 +567,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
           <label className="block text-sm font-medium mb-2">Size</label>
           <select
             value={formData.size}
-            onChange={(e) =>
-              setFormData({ ...formData, size: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, size: e.target.value })}
             className="w-full px-3 py-2 border rounded-lg"
           >
             <option value="">Select Size</option>
@@ -548,9 +584,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
           <label className="block text-sm font-medium mb-2">Brand</label>
           <Input
             value={formData.brands}
-            onChange={(e) =>
-              setFormData({ ...formData, brands: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, brands: e.target.value })}
             placeholder="Adidas"
           />
         </div>
@@ -558,9 +592,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
           <label className="block text-sm font-medium mb-2">Color</label>
           <Input
             value={formData.colour}
-            onChange={(e) =>
-              setFormData({ ...formData, colour: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, colour: e.target.value })}
             placeholder="red,black"
           />
         </div>
@@ -571,13 +603,12 @@ export default function AddEditProductPage({ productId }: { productId?: string }
   const renderVehiclesFields = () => (
     <>
       {renderCommonFields()}
+
       <div>
         <label className="block text-sm font-medium mb-2">Special Features</label>
         <Input
           value={formData.specialFeatures}
-          onChange={(e) =>
-            setFormData({ ...formData, specialFeatures: e.target.value })
-          }
+          onChange={(e) => setFormData({ ...formData, specialFeatures: e.target.value })}
         />
       </div>
 
@@ -586,9 +617,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
           <label className="block text-sm font-medium mb-2">Vehicle Condition</label>
           <select
             value={formData.vehicleCondition}
-            onChange={(e) =>
-              setFormData({ ...formData, vehicleCondition: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, vehicleCondition: e.target.value })}
             className="w-full px-3 py-2 border rounded-lg"
           >
             <option value="">Select</option>
@@ -601,9 +630,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
           <label className="block text-sm font-medium mb-2">Registration</label>
           <select
             value={formData.registration}
-            onChange={(e) =>
-              setFormData({ ...formData, registration: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, registration: e.target.value })}
             className="w-full px-3 py-2 border rounded-lg"
           >
             <option value="">Select</option>
@@ -616,27 +643,17 @@ export default function AddEditProductPage({ productId }: { productId?: string }
       <div className="grid grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium mb-2">Fuel Type</label>
-          <Input
-            value={formData.fuelType}
-            onChange={(e) =>
-              setFormData({ ...formData, fuelType: e.target.value })
-            }
-          />
+          <Input value={formData.fuelType} onChange={(e) => setFormData({ ...formData, fuelType: e.target.value })} />
         </div>
         <div>
           <label className="block text-sm font-medium mb-2">CC</label>
-          <Input
-            value={formData.cc}
-            onChange={(e) => setFormData({ ...formData, cc: e.target.value })}
-          />
+          <Input value={formData.cc} onChange={(e) => setFormData({ ...formData, cc: e.target.value })} />
         </div>
         <div>
           <label className="block text-sm font-medium mb-2">Transmission</label>
           <Input
             value={formData.transmission}
-            onChange={(e) =>
-              setFormData({ ...formData, transmission: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, transmission: e.target.value })}
           />
         </div>
       </div>
@@ -650,9 +667,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
         <label className="block text-sm font-medium mb-2">Service Features</label>
         <Input
           value={formData.serviceFeatures}
-          onChange={(e) =>
-            setFormData({ ...formData, serviceFeatures: e.target.value })
-          }
+          onChange={(e) => setFormData({ ...formData, serviceFeatures: e.target.value })}
         />
       </div>
     </>
@@ -679,9 +694,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
             <ArrowLeft className="w-5 h-5" />
           </button>
         </Link>
-        <h1 className="text-3xl font-bold">
-          {isEditing ? "Edit Product" : "Add New Product"}
-        </h1>
+        <h1 className="text-3xl font-bold">{isEditing ? "Edit Product" : "Add New Product"}</h1>
       </div>
 
       {/* Tabs */}
@@ -695,9 +708,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
             key={tab.id}
             onClick={() => setActiveTab(tab.id as ProductType)}
             className={`px-4 py-2 font-medium border-b-2 ${
-              activeTab === tab.id
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-600"
+              activeTab === tab.id ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600"
             }`}
           >
             {tab.label}
@@ -719,11 +730,7 @@ export default function AddEditProductPage({ productId }: { productId?: string }
                 <label className="block text-sm font-medium mb-2">Tags</label>
 
                 <div className="flex gap-2 mb-3">
-                  <Input
-                    placeholder="Tag"
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                  />
+                  <Input placeholder="Tag" value={tagInput} onChange={(e) => setTagInput(e.target.value)} />
                   <Button onClick={handleAddTag} className="bg-blue-600">
                     +
                   </Button>
@@ -751,32 +758,28 @@ export default function AddEditProductPage({ productId }: { productId?: string }
           </Card>
         </div>
 
-        {/* IMAGE UPLOAD */}
-        <div>
+        {/* UPLOADS RIGHT */}
+        <div className="space-y-6">
+          {/* MAIN IMAGE */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Photo</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ImageIcon className="w-4 h-4" /> Main Image
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div
                 className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center flex flex-col items-center gap-3 cursor-pointer"
-                onClick={handlePhotoClick}
+                onClick={handleMainImageClick}
               >
                 {mainImagePreview ? (
                   <div className="w-full h-40 relative mb-2">
-                    <Image
-                      src={mainImagePreview}
-                      alt="Product"
-                      fill
-                      className="object-cover rounded-md"
-                    />
+                    <Image src={mainImagePreview} alt="Product" fill className="object-cover rounded-md" />
                   </div>
                 ) : (
                   <>
                     <Upload className="w-12 h-12 text-blue-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-600">
-                      Drag &amp; drop or click to upload
-                    </p>
+                    <p className="text-sm text-gray-600">Drag &amp; drop or click to upload</p>
                   </>
                 )}
 
@@ -789,7 +792,111 @@ export default function AddEditProductPage({ productId }: { productId?: string }
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={handlePhotoChange}
+                  onChange={handleMainImageChange}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* GALLERY */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ImageIcon className="w-4 h-4" /> Image Gallery (max 10)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer"
+                onClick={handleGalleryClick}
+              >
+                <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+                  <Upload className="w-5 h-5 text-blue-400" />
+                  <span>Click to upload gallery images</span>
+                </div>
+
+                {galleryPreviews.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 mt-4">
+                    {galleryPreviews.map((src, idx) => (
+                      <div key={idx} className="relative w-full h-20">
+                        <Image src={src} alt={`Gallery ${idx}`} fill className="object-cover rounded-md" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleGalleryChange}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* VIDEO */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Video className="w-4 h-4" /> Video (1)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer"
+                onClick={handleVideoClick}
+              >
+                <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+                  <Upload className="w-5 h-5 text-blue-400" />
+                  <span>Click to upload video</span>
+                </div>
+
+                {videoPreview && (
+                  <video className="w-full mt-4 rounded-md" controls src={videoPreview} />
+                )}
+
+                <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={handleVideoChange} />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* DOCUMENTS */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="w-4 h-4" /> Documents (max 5)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer"
+                onClick={handleDocumentsClick}
+              >
+                <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+                  <Upload className="w-5 h-5 text-blue-400" />
+                  <span>Click to upload documents</span>
+                </div>
+
+                {documentFiles.length > 0 && (
+                  <ul className="mt-4 space-y-2 text-sm">
+                    {documentFiles.map((f, idx) => (
+                      <li key={idx} className="flex items-center justify-between border rounded-md px-2 py-1">
+                        <span className="truncate">{f.name}</span>
+                        <span className="text-gray-500">{Math.round(f.size / 1024)} KB</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <input
+                  ref={documentsInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleDocumentsChange}
                 />
               </div>
             </CardContent>

@@ -1,147 +1,156 @@
-"use client"
+"use client";
 
-import { useEffect, useMemo } from "react"
-import { toast } from "sonner"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { motion } from "framer-motion"
-import { cn } from "@/lib/utils"
-import { notificationApi } from "@/lib/api"
-import type { Notification } from "@/lib/api"
-import { getSocket } from "@/lib/socket"
-import { useSession } from "next-auth/react"
+import { useEffect, useMemo } from "react";
+import { toast } from "sonner";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "framer-motion";
+import { cn } from "@/lib/utils";
+import { notificationApi } from "@/lib/api";
+import type { Notification } from "@/lib/api";
+import { getSocket } from "@/lib/socket";
+import { useSession } from "next-auth/react";
+import Image from "next/image";
 
 type QueryData = {
-  notifications: Notification[]
-  pagination?: any
-}
+  notifications: Notification[];
+  pagination?: any;
+};
 
 const containerVariants = {
   visible: { transition: { staggerChildren: 0.06 } },
-}
+};
 
 const itemVariants = {
   visible: { opacity: 1, y: 0 },
-}
+};
 
 function formatTime(n: Notification) {
-  const raw = (n as any).createdAt ?? n.sentAt
-  if (!raw) return "Just now"
-  const d = new Date(raw)
-  if (Number.isNaN(d.getTime())) return "Just now"
-  return d.toLocaleString()
+  const raw = (n as any).createdAt ?? n.sentAt;
+  if (!raw) return "Just now";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "Just now";
+  return d.toLocaleString();
 }
 
 function normalizeIncoming(payload: any): Notification | null {
-  if (!payload) return null
-  if (payload?._id) return payload as Notification
-  if (payload?.notification?._id) return payload.notification as Notification
-  if (payload?.data?._id) return payload.data as Notification
-  if (payload?.data?.notification?._id) return payload.data.notification as Notification
-  return null
+  if (!payload) return null;
+  if (payload?._id) return payload as Notification;
+  if (payload?.notification?._id) return payload.notification as Notification;
+  if (payload?.data?._id) return payload.data as Notification;
+  if (payload?.data?.notification?._id)
+    return payload.data.notification as Notification;
+  return null;
 }
 
 export default function NotificationsPage() {
-  const queryClient = useQueryClient()
-  const { data: session } = useSession()
+  const queryClient = useQueryClient();
+  const { data: session } = useSession();
 
   const userId =
     (session?.user as any)?.id ||
     (session?.user as any)?._id ||
-    (session?.user as any)?.userId
+    (session?.user as any)?.userId;
 
   const { data, isLoading, isError, error } = useQuery<QueryData>({
     queryKey: ["notifications"],
     queryFn: async () => {
-      const res = await notificationApi.getMyNotifications()
-      return res.data.data
+      const res = await notificationApi.getMyNotifications();
+      return res.data.data;
     },
-  })
+  });
 
-  const notifications = data?.notifications ?? []
+  const notifications = data?.notifications ?? [];
 
   const unreadCount = useMemo(
     () => notifications.filter((n) => n.status === "unread").length,
     [notifications]
-  )
+  );
 
   // ✅ SOCKET
   useEffect(() => {
-    if (!userId) return
+    if (!userId) return;
 
-    const socket = getSocket()
-    socket.emit("notifications:join", userId)
+    const socket = getSocket();
+    socket.emit("notifications:join", userId);
 
     const onNew = (payload: any) => {
-      const incoming = normalizeIncoming(payload)
-      if (!incoming) return
+      const incoming = normalizeIncoming(payload);
+      if (!incoming) return;
 
       queryClient.setQueryData<QueryData>(["notifications"], (old) => {
-        const prev = old?.notifications ?? []
-        const exists = prev.some((n) => n._id === incoming._id)
-        if (exists) return old ?? { notifications: prev }
-        return { ...(old ?? {}), notifications: [incoming, ...prev] }
-      })
+        const prev = old?.notifications ?? [];
+        const exists = prev.some((n) => n._id === incoming._id);
+        if (exists) return old ?? { notifications: prev };
+        return { ...(old ?? {}), notifications: [incoming, ...prev] };
+      });
 
-      toast.info(incoming.title || "New notification")
-    }
+      toast.info(incoming.title || "New notification");
+    };
 
-    socket.on("notification:new", onNew)
+    socket.on("notification:new", onNew);
 
     return () => {
-      socket.off("notification:new", onNew)
-      socket.emit("notifications:leave", userId)
-    }
-  }, [userId, queryClient])
+      socket.off("notification:new", onNew);
+      socket.emit("notifications:leave", userId);
+    };
+  }, [userId, queryClient]);
 
   const markAllAsReadMutation = useMutation({
     mutationFn: async () => notificationApi.markAllRead(),
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ["notifications"] })
-      const previous = queryClient.getQueryData<QueryData>(["notifications"])
+      await queryClient.cancelQueries({ queryKey: ["notifications"] });
+      const previous = queryClient.getQueryData<QueryData>(["notifications"]);
 
       queryClient.setQueryData<QueryData>(["notifications"], (old) => {
-        if (!old) return old
+        if (!old) return old;
         return {
           ...old,
-          notifications: old.notifications.map((n) => ({ ...n, status: "read" })),
-        }
-      })
+          notifications: old.notifications.map((n) => ({
+            ...n,
+            status: "read",
+          })),
+        };
+      });
 
-      return { previous }
+      return { previous };
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.previous) queryClient.setQueryData(["notifications"], ctx.previous)
-      toast.error("Failed to mark notifications")
+      if (ctx?.previous)
+        queryClient.setQueryData(["notifications"], ctx.previous);
+      toast.error("Failed to mark notifications");
     },
     onSuccess: () => toast.success("Marked all as read"),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
-  })
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+  });
 
   const markSingleAsRead = useMutation({
     mutationFn: async (id: string) => notificationApi.markStatus(id, "read"),
     onMutate: async (id: string) => {
-      await queryClient.cancelQueries({ queryKey: ["notifications"] })
-      const previous = queryClient.getQueryData<QueryData>(["notifications"])
+      await queryClient.cancelQueries({ queryKey: ["notifications"] });
+      const previous = queryClient.getQueryData<QueryData>(["notifications"]);
 
       queryClient.setQueryData<QueryData>(["notifications"], (old) => {
-        if (!old) return old
+        if (!old) return old;
         return {
           ...old,
           notifications: old.notifications.map((n) =>
             n._id === id ? { ...n, status: "read" } : n
           ),
-        }
-      })
+        };
+      });
 
-      return { previous }
+      return { previous };
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.previous) queryClient.setQueryData(["notifications"], ctx.previous)
-      toast.error("Failed to mark as read")
+      if (ctx?.previous)
+        queryClient.setQueryData(["notifications"], ctx.previous);
+      toast.error("Failed to mark as read");
     },
     onSuccess: () => toast.success("Marked as read"),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
-  })
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+  });
 
   return (
     <div className="container mx-auto py-24">
@@ -165,7 +174,11 @@ export default function NotificationsPage() {
         </button>
       </div>
 
-      {isLoading && <div className="text-center text-gray-500">Loading notifications...</div>}
+      {isLoading && (
+        <div className="text-center text-gray-500">
+          Loading notifications...
+        </div>
+      )}
 
       {isError && (
         <div className="text-center text-red-500">
@@ -180,11 +193,11 @@ export default function NotificationsPage() {
       <motion.div
         className="space-y-3"
         variants={containerVariants}
-        initial={false}          // ✅ IMPORTANT: don’t start hidden
+        initial={false} // ✅ IMPORTANT: don’t start hidden
         animate="visible"
       >
         {notifications.map((notification) => {
-          const isUnread = notification.status === "unread"
+          const isUnread = notification.status === "unread";
 
           return (
             <motion.div
@@ -195,28 +208,31 @@ export default function NotificationsPage() {
               )}
               variants={itemVariants}
             >
-              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-lg">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="24"
-                  height="24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
+              <div className="relative flex-shrink-0 w-10 h-10 bg-gray-200">
+                {notification?.data?.image ? (
+                  <Image
+                    src={notification.data.image}
+                    alt={notification.title || "Notification"}
+                    fill
+                    className="object-cover"
+                    sizes="40px"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-500 text-xs"/>
+                )}
               </div>
 
               <div className="flex-grow">
                 <p className="text-sm text-gray-800 leading-snug">
                   <span className="font-medium">{notification.title}</span>
-                  <span className="text-gray-600"> — {notification.message}</span>
+                  <span className="text-gray-600">
+                    {" "}
+                    — {notification.message}
+                  </span>
                 </p>
-                <p className="text-xs text-gray-500 mt-1">{formatTime(notification)}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {formatTime(notification)}
+                </p>
               </div>
 
               {isUnread && (
@@ -224,7 +240,8 @@ export default function NotificationsPage() {
                   <button
                     className={cn(
                       "text-xs text-blue-600 hover:text-blue-700 underline",
-                      markSingleAsRead.isPending && "opacity-60 cursor-not-allowed"
+                      markSingleAsRead.isPending &&
+                        "opacity-60 cursor-not-allowed"
                     )}
                     disabled={markSingleAsRead.isPending}
                     onClick={() => markSingleAsRead.mutate(notification._id)}
@@ -235,9 +252,9 @@ export default function NotificationsPage() {
                 </div>
               )}
             </motion.div>
-          )
+          );
         })}
       </motion.div>
     </div>
-  )
+  );
 }
