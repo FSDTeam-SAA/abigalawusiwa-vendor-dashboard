@@ -251,6 +251,9 @@ export default function ProductsPage() {
                         Price
                       </th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">
+                        Discount Price
+                      </th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">
                         Status
                       </th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">
@@ -306,6 +309,10 @@ export default function ProductsPage() {
                         {/* Price */}
                         <td className="py-3 px-4 font-semibold">
                           ${product.price}
+                        </td>
+                        {/* discount Price */}
+                        <td className="py-3 px-4 font-semibold">
+                          ${product.discountPrice}
                         </td>
 
                         {/* Status */}

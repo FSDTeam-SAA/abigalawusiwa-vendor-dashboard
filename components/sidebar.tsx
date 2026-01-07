@@ -30,6 +30,7 @@ const menuItems = [
   { icon: Layers, label: "Category", href: "/dashboard/categories" },
   { icon: ShoppingCart, label: "Orders", href: "/dashboard/orders" },
   { icon: Users, label: "Customer", href: "/dashboard/customers" },
+  { icon: Gift, label: "Save Campaign", href: "/dashboard/saveCampaign" },
   { icon: Gift, label: "Coupons", href: "/dashboard/coupons" },
   { icon: TrendingUp, label: "Earnings", href: "/dashboard/earnings" },
   { icon: Users2, label: "Manage Staff", href: "/dashboard/staff" },
