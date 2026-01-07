@@ -33,6 +33,9 @@ export type NotificationsResponse = {
   };
 };
 
+export type CampaignStatus = "ACTIVE" | "INACTIVE" | "EXPIRED";
+export type DiscountType = "PERCENT" | "FIXED";
+
 export const initializeApi = () => {
   apiInstance = axios.create({
     baseURL: BASE_URL,
@@ -114,6 +117,66 @@ export const categoryApi = {
     getApi().get(`/category?page=${page}&limit=${limit}`),
 };
 
+// ✅ Add this INSIDE your existing api.ts (bottom or near other exports)
+
+export const bigSaveCampaignApi = {
+  // POST /vendor/big-save-campaign
+  create: (data: {
+    name?: string;
+    discountType: DiscountType;
+    discountValue: number;
+    startAt: string;
+    endAt: string;
+    status?: CampaignStatus;
+    productIds?: string[];
+  }) => getApi().post("/vendor/big-save-campaigns", data),
+
+  // GET /vendor/big-save-campaign?page=&limit=&status=
+  getAll: (page = 1, limit = 10, status?: CampaignStatus) => {
+    const params = new URLSearchParams();
+    params.append("page", page.toString());
+    params.append("limit", limit.toString());
+    if (status) params.append("status", status);
+    return getApi().get(`/vendor/big-save-campaigns?${params.toString()}`);
+  },
+
+  // GET /vendor/big-save-campaign/:campaignId
+  getById: (campaignId: string) =>
+    getApi().get(`/vendor/big-save-campaigns/${campaignId}`),
+
+  // PATCH /vendor/big-save-campaign/:campaignId
+  update: (
+    campaignId: string,
+    data: Partial<{
+      name: string;
+      discountType: DiscountType;
+      discountValue: number;
+      startAt: string;
+      endAt: string;
+      status: CampaignStatus;
+    }>
+  ) => getApi().patch(`//vendor/big-save-campaigns/${campaignId}`, data),
+
+  // DELETE /vendor/big-save-campaign/:campaignId
+  delete: (campaignId: string) =>
+    getApi().delete(`/vendor/big-save-campaigns/${campaignId}`),
+  // GET /vendor/big-save-campaign/active/products
+  getActiveProducts: () =>
+    getApi().get("/vendor/big-save-campaigns/active/products"),
+
+  // POST /vendor/big-save-campaign/:campaignId/products
+  attachProducts: (campaignId: string, productIds: string[] | string) =>
+    getApi().post(`/vendor/big-save-campaigns/${campaignId}/products`, {
+      productIds,
+    }),
+
+  // DELETE /vendor/big-save-campaign/:campaignId/products/:productId
+  removeProduct: (campaignId: string, productId: string) =>
+    getApi().delete(
+      `/vendor/big-save-campaigns/${campaignId}/products/${productId}`
+    ),
+};
+
 // 🧾 ORDER APIs
 export const orderApi = {
   getAll: (page = 1, limit = 10) =>
@@ -142,10 +205,10 @@ export const couponApi = {
     if (data instanceof FormData) {
       return getApi().post("/promocode", data, {
         headers: { "Content-Type": "multipart/form-data" },
-      })
+      });
     }
     // fallback JSON
-    return getApi().post("/promocode", data)
+    return getApi().post("/promocode", data);
   },
 
   update: (id: string, data: any) => {
@@ -153,15 +216,14 @@ export const couponApi = {
     if (data instanceof FormData) {
       return getApi().put(`/promocode/${id}`, data, {
         headers: { "Content-Type": "multipart/form-data" },
-      })
+      });
     }
     // fallback JSON
-    return getApi().put(`/promocode/${id}`, data)
+    return getApi().put(`/promocode/${id}`, data);
   },
 
   delete: (id: string) => getApi().delete(`/promocode/${id}`),
-}
-
+};
 
 export const erningApi = {
   getEarnings: () => getApi().get("/vendor/earnings"),
@@ -233,22 +295,17 @@ export const chatApi = {
     getApi().patch("/chat/conversations/read", { conversationIds }),
 };
 
-
-
 export const vendorDashboardApi = {
   getOverview: () => getApi().get("/vendor/dashboard/overview"),
   getOrderAnalytics: () => getApi().get("/vendor/dashboard/analytics/orders"),
-}
-
-
+};
 
 // 💰 COMMISSION APIs
 export const commissionApi = {
   // GET /commissions/my?page=&limit=
   getMy: (page = 1, limit = 10) =>
     getApi().get(`/commissions/my?page=${page}&limit=${limit}`),
-}
-
+};
 
 export const notificationApi = {
   // GET /v1/notifications
